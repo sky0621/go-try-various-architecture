@@ -1,21 +1,16 @@
 package driver
 
 import (
-	"database/sql"
-
-	cloudsqlproxy "github.com/GoogleCloudPlatform/cloudsql-proxy/proxy/dialers/mysql"
-	"github.com/go-sql-driver/mysql"
+	"fmt"
+	"github.com/jinzhu/gorm"
 )
 
-// NewCloudSQLProxyConn ...
-func NewCloudSQLProxyConn(address, dbName, user, passwd string) (*sql.DB, error) {
-	return cloudsqlproxy.DialCfg(&mysql.Config{
-		Addr:      address,
-		DBName:    dbName,
-		User:      user,
-		Passwd:    passwd,
-		Net:       "cloudsql",
-		ParseTime: true,
-		TLSConfig: "",
-	})
+const (
+	DataSourceFormat = "%s:%s@tcp(%s)/%s?charset=utf8&parseTime=True&loc=Local"
+)
+
+// RDBという他のレイヤーから直接呼ぶのはNG（ドライバーという詳細に依存してしまう）なのでDI戦略が必要
+func NewDBConnection(user, password, instance, db string) (*gorm.DB, error) {
+	dataSource := fmt.Sprintf(DataSourceFormat, user, password, instance, db)
+	return gorm.Open("mysql", dataSource)
 }

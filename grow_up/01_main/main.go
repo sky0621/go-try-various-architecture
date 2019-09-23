@@ -1,39 +1,52 @@
 package main
 
 import (
-	"net/http"
-	"sync"
-
+	"github.com/jinzhu/gorm"
 	"github.com/labstack/echo"
+	"log"
+	"net/http"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 // 注意: プロダクション品質ではありません。
 func main() {
-	e := echo.New()
+	// RDB(MySQL)コネクション取得
+	db, err := gorm.Open("mysql", "localuser:localpass@tcp(localhost:3306)/localdb?charset=utf8&parseTime=True&loc=Local")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		if db != nil {
+			if err := db.Close(); err != nil {
+				log.Fatal(err)
+			}
+		}
+	}()
 
-	// 登録した「商品」の保持用（現時点では永続化は無し）
-	itemMap := sync.Map{} // ※管理するデータがタイプセーフではないが、永続化対応までの一時しのぎのため許容
+	// Webサーバセットアップ
+	e := echo.New()
 
 	// 「商品」を登録
 	e.POST("/item", func(c echo.Context) error {
-		i := &item{} // バリデーションは後回し
+		i := &item{}
 		if err := c.Bind(i); err != nil {
 			return sendResponse(c, http.StatusBadRequest)
 		}
-		if _, ok := itemMap.Load(i.ID); ok {
-			return sendResponse(c, http.StatusBadRequest)
+		if err := db.Create(&i).Error; err != nil {
+			log.Println(err)
+			return err
 		}
-		itemMap.Store(i.ID, i)
 		return sendResponse(c, http.StatusOK)
 	})
 
 	// 「商品」一覧を返却
 	e.GET("/item", func(c echo.Context) error {
 		var res []*item
-		itemMap.Range(func(k, v interface{}) bool {
-			res = append(res, v.(*item))
-			return true
-		})
+		if err := db.Find(&res).Error; err != nil {
+			log.Println(err)
+			return err
+		}
 		return c.JSON(http.StatusOK, res)
 	})
 
@@ -42,10 +55,13 @@ func main() {
 
 // 「商品」を定義
 type item struct {
-	ID        string `json:"id"`         // 商品ID
-	Name      string `json:"name"`       // 商品名
-	Price     int    `json:"price"`      // 金額
-	CreatedAt int    `json:"created_at"` // 商品登録日(Unixタイムスタンプ)
+	ID    string `json:"id" gorm:"column:id;primary_key"` // 商品ID
+	Name  string `json:"name" gorm:"column:name"`         // 商品名
+	Price int    `json:"price" gorm:"column:price"`       // 金額
+}
+
+func (i *item) TableName() string {
+	return "item"
 }
 
 func sendResponse(c echo.Context, code int) error {
